@@ -153,6 +153,64 @@ class AuthController {
       return response.status(400).send({ message: "Erro ao enviar email" });
     }
   }
+  async remember({ request, response }) {
+    try {
+      let token = request.input("token");
+
+      let tokenConfirm = await Token.query()
+        .where({
+          token: token,
+          is_revoked: false,
+          type: "reset_password",
+        })
+        .fetch();
+      if (tokenConfirm.rows.length === 0) {
+        throw {
+          code: 1234,
+          message: "Token inválido",
+        };
+      }
+
+      return response.status(200).send({ message: "Token válido" });
+    } catch (error) {
+      return response.status(400).send({ message: "Token inválido" });
+    }
+  }
+  async reset({ request, response }) {
+    const trx = await Database.beginTransaction();
+    try {
+      let { token, password } = request.all();
+
+      let tokenConfirm = await Token.findBy({ token, is_revoked: false });
+
+      if (!tokenConfirm) {
+        throw {
+          code: 1234,
+          message: "Token inválido",
+        };
+      }
+      tokenConfirm.merge({
+        is_revoked: true,
+      });
+      await tokenConfirm.save(trx);
+
+      let user = await User.find(tokenConfirm.user_id);
+      user.merge({
+        password,
+      });
+
+      await user.save(trx);
+
+      await trx.commit();
+
+      return response
+        .status(200)
+        .send({ message: "Nova senha registrada. Tente realizar Login" });
+    } catch (error) {
+      await trx.rollback();
+      return response.status(400).send({ message: "Erro ao alterar senha" });
+    }
+  }
 }
 
 module.exports = AuthController;
